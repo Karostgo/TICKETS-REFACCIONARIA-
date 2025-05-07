@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hernández Refaccionaria Eléctrica</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body {
+      background-color: #f4f4f4;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    .logo {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #e63946;
+    }
+    .ticket-card {
+      border-left: 5px solid #457b9d;
+      background-color: white;
+      margin-bottom: 1rem;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .form-section {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container text-end">
+    <button class="btn btn-outline-secondary mt-2" data-bs-toggle="modal" data-bs-target="#authModal">
+      <i class="fas fa-user"></i> Iniciar Sesión / Registro
+    </button>
+  </div>
+  <div class="container py-4">
+    <header class="text-center mb-4">
+      <div class="logo">
+        <i class="fas fa-tools"></i> Hernández Refaccionaria Eléctrica
+      </div>
+    </header>
+
+    <div class="row">
+      <div class="col-md-6">
+        <div class="form-section">
+          <h5>Crear Ticket</h5>
+          <form id="ticketForm">
+            <input type="text" class="form-control mb-2" placeholder="Título" id="titulo" required>
+            <textarea class="form-control mb-2" placeholder="Descripción" id="descripcion" required></textarea>
+            <select class="form-control mb-2" id="prioridad" required>
+              <option value="Alta">Alta</option>
+              <option value="Media">Media</option>
+              <option value="Baja">Baja</option>
+            </select>
+            <select class="form-control mb-2" id="tipo" required>
+              <option value="Producto">Producto</option>
+              <option value="Servicio">Servicio</option>
+            </select>
+            <input type="text" class="form-control mb-2" placeholder="Nombre del Cliente" id="cliente" required>
+            <input type="text" class="form-control mb-2" placeholder="País de Envío" id="pais" required>
+            <button class="btn btn-primary w-100" type="submit">Crear Ticket</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="col-md-6">
+        <h5>Estadísticas de Prioridad</h5>
+        <canvas id="chartPrioridad"></canvas>
+        <button class="btn btn-success mt-3" id="exportExcel">Exportar a Excel</button>
+      </div>
+    </div>
+
+    <h4 class="mt-5">Tickets</h4>
+    <div id="ticketList" class="mt-3"></div>
+  </div>
+
+  <!-- Autenticación -->
+  <div class="modal fade" id="authModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Acceso de Usuario</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="loginForm">
+            <input type="email" class="form-control mb-2" placeholder="Correo" id="loginEmail" required>
+            <input type="password" class="form-control mb-2" placeholder="Contraseña" id="loginPass" required>
+            <button class="btn btn-primary w-100 mb-2" type="submit">Iniciar Sesión</button>
+          </form>
+          <form id="registerForm">
+            <input type="email" class="form-control mb-2" placeholder="Correo" id="registerEmail" required>
+            <input type="password" class="form-control mb-2" placeholder="Contraseña" id="registerPass" required>
+            <button class="btn btn-secondary w-100 mb-2" type="submit">Registrarse</button>
+          </form>
+          <form id="recoverForm">
+            <input type="email" class="form-control mb-2" placeholder="Correo para recuperar" id="recoverEmail" required>
+            <button class="btn btn-link w-100" type="submit">Recuperar contraseña</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAVqA-wY_nb_PekbdgjsfoSRWFAh_KsLZE",
+      authDomain: "tickets-refaccionaria.firebaseapp.com",
+      projectId: "tickets-refaccionaria",
+      storageBucket: "tickets-refaccionaria.firebasestorage.app",
+      messagingSenderId: "221441811717",
+      appId: "1:221441811717:web:7c18854332397ca344c36c"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    const ticketForm = document.getElementById('ticketForm');
+    const ticketList = document.getElementById('ticketList');
+    const chartCtx = document.getElementById('chartPrioridad').getContext('2d');
+    let chart;
+    let currentUser = null;
+
+    onAuthStateChanged(auth, user => {
+      currentUser = user;
+    });
+
+    ticketForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!currentUser) {
+        alert("Debes iniciar sesión para crear un ticket.");
+        return;
+      }
+      const ticket = {
+        titulo: titulo.value,
+        descripcion: descripcion.value,
+        prioridad: prioridad.value,
+        tipo: tipo.value,
+        cliente: cliente.value,
+        pais: pais.value,
+        folio: 'TKT-' + Date.now(),
+        estado: 'Abierto',
+        fecha: new Date().toISOString(),
+        userId: currentUser.uid
+      };
+      await addDoc(collection(db, 'tickets'), ticket);
+      ticketForm.reset();
+      loadTickets();
+    });
+
+    const renderChart = (tickets) => {
+      const counts = { Alta: 0, Media: 0, Baja: 0 };
+      tickets.forEach(t => counts[t.prioridad]++);
+      if(chart) chart.destroy();
+      chart = new Chart(chartCtx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(counts),
+          datasets: [{
+            label: '# de Tickets',
+            data: Object.values(counts),
+            backgroundColor: ['#e63946','#f1fa8c','#8ac926']
+          }]
+        }
+      });
+    };
+
+    const loadTickets = async () => {
+      ticketList.innerHTML = '';
+      const querySnapshot = await getDocs(collection(db, 'tickets'));
+      const tickets = [];
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        tickets.push(data);
+        const div = document.createElement('div');
+        div.className = 'ticket-card p-3';
+        div.innerHTML = `<h5>${data.titulo} <small class="text-muted">(${data.folio})</small></h5>
+          <p>${data.descripcion}</p>
+          <p><strong>Cliente:</strong> ${data.cliente} | <strong>País:</strong> ${data.pais}</p>
+          <p><strong>Prioridad:</strong> ${data.prioridad} | <strong>Tipo:</strong> ${data.tipo}</p>
+          <button class="btn btn-outline-danger btn-sm export-pdf" data-ticket='${JSON.stringify(data)}'><i class="fas fa-file-pdf"></i> Exportar PDF</button>`;
+        ticketList.appendChild(div);
+      });
+      renderChart(tickets);
+    };
+
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('export-pdf')) {
+        const data = JSON.parse(e.target.dataset.ticket);
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        doc.text(`Folio: ${data.folio}`, 10, 10);
+        doc.text(`Título: ${data.titulo}`, 10, 20);
+        doc.text(`Descripción: ${data.descripcion}`, 10, 30);
+        doc.text(`Cliente: ${data.cliente}`, 10, 40);
+        doc.text(`País: ${data.pais}`, 10, 50);
+        doc.text(`Prioridad: ${data.prioridad}`, 10, 60);
+        doc.text(`Tipo: ${data.tipo}`, 10, 70);
+        doc.save(`${data.folio}.pdf`);
+      }
+    });
+
+    document.getElementById('exportExcel').addEventListener('click', async () => {
+      const querySnapshot = await getDocs(collection(db, 'tickets'));
+      const tickets = [];
+      querySnapshot.forEach(doc => tickets.push(doc.data()));
+      const worksheet = XLSX.utils.json_to_sheet(tickets);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Tickets");
+      XLSX.writeFile(workbook, "tickets.xlsx");
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPass').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        alert("Inicio de sesión exitoso");
+        bootstrap.Modal.getInstance(document.getElementById('authModal')).hide();
+      } catch (error) {
+        alert("Error al iniciar sesión: " + error.message);
+      }
+    });
+
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('registerEmail').value;
+      const password = document.getElementById('registerPass').value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+        alert("Usuario registrado exitosamente");
+      } catch (error) {
+        alert("Error al registrarse: " + error.message);
+      }
+    });
+
+    document.getElementById('recoverForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('recoverEmail').value;
+      try {
+        await sendPasswordResetEmail(auth, email);
+        alert("Correo de recuperación enviado");
+      } catch (error) {
+        alert("Error al enviar correo: " + error.message);
+      }
+    });
+
+    loadTickets();
+  </script>
+</body>
+</html>
